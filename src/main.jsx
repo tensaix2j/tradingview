@@ -5,8 +5,7 @@ import './styles.css';
 
 const STORAGE_KEY = 'tradingview-watchlist';
 const DEFAULT_WATCHLIST = ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT', 'BINANCE:SOLUSDT', 'NASDAQ:NVDA', 'NASDAQ:AAPL'];
-const BINANCE_24HR_URL = 'https://api.binance.com/api/v3/ticker/24hr';
-const BINANCE_FUTURES_PRICE_URL = 'https://fapi.binance.com/fapi/v1/ticker/price';
+const BINANCE_PROXY_URL = 'https://molecule-dev.muaverse.build/polyrouter/get_binance';
 
 function normalizeSymbol(value) {
   return value.trim().replace(/\s+/g, '').toUpperCase();
@@ -20,14 +19,6 @@ function toBinanceSymbol(symbol) {
 function toBinanceFuturesSymbol(symbol) {
   const baseSymbol = toBinanceSymbol(symbol);
   return /(USDT|USDC|BTC|ETH|BNB)$/.test(baseSymbol) ? baseSymbol : `${baseSymbol}USDT`;
-}
-
-function canUseBinance(symbol) {
-  return symbol.startsWith('BINANCE:') || /^[A-Z0-9]+(USDT|USDC|BTC|ETH|BNB)$/.test(symbol);
-}
-
-function canUseBinanceFutures(symbol) {
-  return !symbol.startsWith('BINANCE:') || symbol.startsWith('BINANCE:');
 }
 
 function formatPrice(value) {
@@ -108,56 +99,33 @@ function App() {
     const controller = new AbortController();
 
     async function fetchQuotes() {
-      const binanceSymbols = [...new Set(watchlist.filter(canUseBinance).map(toBinanceSymbol))];
-      const futuresSymbols = [
-        ...new Set(
-          watchlist
-            .filter((symbol) => !canUseBinance(symbol) && canUseBinanceFutures(symbol))
-            .map(toBinanceFuturesSymbol)
-        )
-      ];
+      const quoteSymbols = [...new Set(watchlist.map(toBinanceFuturesSymbol))];
 
-      if (!binanceSymbols.length && !futuresSymbols.length) {
+      if (!quoteSymbols.length) {
         setQuotes({});
         return;
       }
 
       try {
-        const [spotQuotes, futuresQuotes] = await Promise.all([
-          binanceSymbols.length
-            ? fetch(`${BINANCE_24HR_URL}?symbols=${encodeURIComponent(JSON.stringify(binanceSymbols))}`, {
-                signal: controller.signal
-              }).then((response) => {
-                if (!response.ok) throw new Error('Unable to load Binance spot quotes');
-                return response.json();
-              })
-            : Promise.resolve([]),
-          Promise.all(
-            futuresSymbols.map(async (symbol) => {
-              const response = await fetch(`${BINANCE_FUTURES_PRICE_URL}?symbol=${symbol}`, {
-                signal: controller.signal
-              });
-              if (!response.ok) return null;
-              return response.json();
-            })
-          )
-        ]);
+        const response = await fetch(
+          `${BINANCE_PROXY_URL}?symbols=${encodeURIComponent(JSON.stringify(quoteSymbols))}`,
+          {
+            signal: controller.signal
+          }
+        );
+
+        if (!response.ok) throw new Error('Unable to load Binance proxy quotes');
+
+        const payload = await response.json();
+        const proxyQuotes = Array.isArray(payload?.data) ? payload.data : [];
 
         const nextQuotes = {};
 
-        spotQuotes.forEach((quote) => {
+        proxyQuotes.forEach((quote) => {
           nextQuotes[quote.symbol] = {
             price: quote.lastPrice,
             changePercent: quote.priceChangePercent,
-            source: 'Spot'
-          };
-        });
-
-        futuresQuotes.filter(Boolean).forEach((quote) => {
-          nextQuotes[quote.symbol] = {
-            price: quote.price,
-            changePercent: null,
-            source: 'Futures'
+            source: 'Binance'
           };
         });
 
@@ -252,7 +220,7 @@ function App() {
 
         <div className="watchlist">
           {sortedWatchlist.map((symbol) => {
-            const quoteKey = canUseBinance(symbol) ? toBinanceSymbol(symbol) : toBinanceFuturesSymbol(symbol);
+            const quoteKey = toBinanceFuturesSymbol(symbol);
             const quote = quotes[quoteKey];
             const isPositive = Number(quote?.changePercent) >= 0;
 
