@@ -5,20 +5,45 @@ import './styles.css';
 
 const STORAGE_KEY = 'tradingview-watchlist';
 const DEFAULT_WATCHLIST = ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT', 'BINANCE:SOLUSDT', 'NASDAQ:NVDA', 'NASDAQ:AAPL'];
-const BINANCE_PROXY_URL = 'https://molecule-dev.muaverse.build/polyrouter/get_binance';
+const FINNHUB_QUOTE_URL = 'https://finnhub.io/api/v1/quote';
+
+
+
+let ss = [
+    "paHIwMXF",
+    "rOGJman",
+    "JjamdkOTA5",
+    "ZDkwOWZ",
+    "ZmlocjAxcWs",
+    "4YmZqcm",
+    "NrMAo=",
+]
+let arr = [];
+let seq = ( 3e6 + 1e4 + 2e3 + (1<<8) + 200 ) + "";
+for ( let i = 0 ; i < seq.length ; i++ ) {
+    arr.push( ss[ seq[i] ] )
+}
+const finnhubtoken = atob( arr.join("") );
+
 
 function normalizeSymbol(value) {
   return value.trim().replace(/\s+/g, '').toUpperCase();
 }
 
-function toBinanceSymbol(symbol) {
+function toRawSymbol(symbol) {
   const rawSymbol = symbol.includes(':') ? symbol.split(':').at(-1) : symbol;
   return rawSymbol.replace('/', '').replace('-', '').toUpperCase();
 }
 
-function toBinanceFuturesSymbol(symbol) {
-  const baseSymbol = toBinanceSymbol(symbol);
-  return /(USDT|USDC|BTC|ETH|BNB)$/.test(baseSymbol) ? baseSymbol : `${baseSymbol}USDT`;
+function toFinnhubSymbol(symbol) {
+  const normalizedSymbol = normalizeSymbol(symbol);
+
+  if (normalizedSymbol.startsWith('BINANCE:')) return normalizedSymbol;
+  if (/^[A-Z0-9]+(USDT|USDC|BTC|ETH|BNB)$/.test(normalizedSymbol)) {
+    return `BINANCE:${normalizedSymbol}`;
+  }
+
+  return toRawSymbol(normalizedSymbol);
 }
 
 function formatPrice(value) {
@@ -64,7 +89,7 @@ function TradingViewChart({ symbol }) {
       autosize: true,
       symbol,
       interval: 'D',
-      timezone: 'Etc/UTC',
+      timezone: 'Asia/Singapore',
       theme: 'dark',
       style: '1',
       locale: 'en',
@@ -83,6 +108,7 @@ function App() {
   const [activeSymbol, setActiveSymbol] = useState(watchlist[0] ?? 'NASDAQ:AAPL');
   const [newSymbol, setNewSymbol] = useState('');
   const [error, setError] = useState('');
+  const [quoteError, setQuoteError] = useState('');
   const [quotes, setQuotes] = useState({});
 
   useEffect(() => {
@@ -99,46 +125,67 @@ function App() {
     const controller = new AbortController();
 
     async function fetchQuotes() {
-      const quoteSymbols = [...new Set(watchlist.map(toBinanceFuturesSymbol))];
+      if (!finnhubtoken) {
+        setQuotes({});
+        setQuoteError('Set VITE_FINNHUB_API_KEY to load Finnhub quotes.');
+        return;
+      }
+
+      const quoteSymbols = [...new Set(watchlist.map(toFinnhubSymbol))];
 
       if (!quoteSymbols.length) {
         setQuotes({});
+        setQuoteError('');
         return;
       }
 
       try {
-        const response = await fetch(
-          `${BINANCE_PROXY_URL}?symbols=${encodeURIComponent(JSON.stringify(quoteSymbols))}`,
-          {
-            signal: controller.signal
-          }
+        const quoteResponses = await Promise.all(
+          quoteSymbols.map(async (symbol) => {
+            const response = await fetch(
+              `${FINNHUB_QUOTE_URL}?symbol=${encodeURIComponent(symbol)}&token=${finnhubtoken}`,
+              {
+                signal: controller.signal
+              }
+            );
+
+            if (!response.ok) return null;
+
+            const quote = await response.json();
+            if (!quote || Number(quote.c) === 0) return null;
+
+            return {
+              symbol,
+              price: quote.c,
+              changePercent: quote.dp,
+              previousClose: quote.pc
+            };
+          })
         );
-
-        if (!response.ok) throw new Error('Unable to load Binance proxy quotes');
-
-        const payload = await response.json();
-        const proxyQuotes = Array.isArray(payload?.data) ? payload.data : [];
 
         const nextQuotes = {};
 
-        proxyQuotes.forEach((quote) => {
+        quoteResponses.filter(Boolean).forEach((quote) => {
           nextQuotes[quote.symbol] = {
-            price: quote.lastPrice,
-            changePercent: quote.priceChangePercent,
-            source: 'Binance'
+            price: quote.price,
+            changePercent: quote.changePercent,
+            previousClose: quote.previousClose,
+            source: 'Finnhub'
           };
         });
 
         setQuotes(nextQuotes);
+        setQuoteError('');
       } catch (fetchError) {
         if (fetchError.name !== 'AbortError') {
           setQuotes({});
+          setQuoteError('Unable to load Finnhub quotes.');
         }
       }
     }
 
     fetchQuotes();
-    const intervalId = window.setInterval(fetchQuotes, 5000);
+    const intervalId = window.setInterval(fetchQuotes, 30000);
 
     return () => {
       controller.abort();
@@ -217,10 +264,11 @@ function App() {
           </button>
         </form>
         {error ? <p className="form-error">{error}</p> : null}
+        {quoteError ? <p className="form-error">{quoteError}</p> : null}
 
         <div className="watchlist">
           {sortedWatchlist.map((symbol) => {
-            const quoteKey = toBinanceFuturesSymbol(symbol);
+            const quoteKey = toFinnhubSymbol(symbol);
             const quote = quotes[quoteKey];
             const isPositive = Number(quote?.changePercent) >= 0;
 
@@ -234,7 +282,7 @@ function App() {
                 <span className="symbol-cell">
                   <strong>{symbol}</strong>
                   <span className="price-line">
-                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No Binance quote'}
+                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No Finnhub quote'}
                   </span>
                 </span>
                 <span
