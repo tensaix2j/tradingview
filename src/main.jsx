@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Plus, Search, Star, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Plus, Search, Trash2 } from 'lucide-react';
 import './styles.css';
 
 const STORAGE_KEY = 'tradingview-watchlist';
@@ -110,6 +110,7 @@ function App() {
   const [error, setError] = useState('');
   const [quoteError, setQuoteError] = useState('');
   const [quotes, setQuotes] = useState({});
+  const [showChart, setShowChart] = useState(true);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(watchlist));
@@ -222,22 +223,30 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section className="chart-pane">
+    <main className={`app-shell ${showChart ? '' : 'is-chart-hidden'}`}>
+      {showChart ? (
+        <section className="chart-pane">
         <header className="topbar">
           <div>
             <span className="eyebrow">Live chart</span>
             <h1>{activeSymbol}</h1>
           </div>
-          <div className="active-pill">
-            <Star size={16} fill="currentColor" />
-            Watchlist
-          </div>
+          <button
+            className="toggle-chart-button"
+            type="button"
+            onClick={() => setShowChart(false)}
+            aria-label="Hide chart"
+            title="Hide chart"
+          >
+            <EyeOff size={17} />
+            Hide chart
+          </button>
         </header>
         <div className="chart-frame">
           <TradingViewChart symbol={activeSymbol} />
         </div>
       </section>
+      ) : null}
 
       <aside className="watchlist-pane">
         <div className="watchlist-header">
@@ -245,7 +254,18 @@ function App() {
             <span className="eyebrow">Markets</span>
             <h2>Watchlist</h2>
           </div>
-          <span className="count">{watchlist.length}</span>
+          <div className="watchlist-actions">
+            <button
+              className="icon-ghost-button"
+              type="button"
+              onClick={() => setShowChart((current) => !current)}
+              aria-label={showChart ? 'Hide chart' : 'Show chart'}
+              title={showChart ? 'Hide chart' : 'Show chart'}
+            >
+              {showChart ? <EyeOff size={17} /> : <Eye size={17} />}
+            </button>
+            <span className="count">{watchlist.length}</span>
+          </div>
         </div>
 
         <form className="add-form" onSubmit={addSymbol}>

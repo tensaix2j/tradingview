@@ -39,6 +39,10 @@ input {
   overflow: hidden;
 }
 
+.app-shell.is-chart-hidden {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .chart-pane {
   display: flex;
   flex-direction: column;
@@ -86,7 +90,8 @@ h2 {
   font-size: 1.35rem;
 }
 
-.active-pill,
+.toggle-chart-button,
+.icon-ghost-button,
 .count {
   display: inline-flex;
   align-items: center;
@@ -101,6 +106,27 @@ h2 {
   font-weight: 700;
   padding: 0 12px;
   white-space: nowrap;
+}
+
+.toggle-chart-button,
+.icon-ghost-button {
+  cursor: pointer;
+}
+
+.toggle-chart-button:hover,
+.icon-ghost-button:hover {
+  border-color: #3f536f;
+  background: #172437;
+}
+
+.toggle-chart-button {
+  border-radius: 8px;
+}
+
+.icon-ghost-button {
+  width: 34px;
+  padding: 0;
+  border-radius: 8px;
 }
 
 .chart-frame {
@@ -133,6 +159,12 @@ h2 {
   min-width: 42px;
   border-radius: 8px;
   color: #f7f9fc;
+}
+
+.watchlist-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .add-form {
@@ -292,6 +324,10 @@ h2 {
     grid-template-rows: minmax(0, 68fr) minmax(0, 32fr);
   }
 
+  .app-shell.is-chart-hidden {
+    grid-template-rows: minmax(0, 1fr);
+  }
+
   .chart-pane {
     min-height: 0;
     border-right: 0;
@@ -313,10 +349,9 @@ h2 {
     padding: 14px;
   }
 
-  .active-pill {
-    width: 34px;
+  .toggle-chart-button {
+    width: 38px;
     padding: 0;
     overflow: hidden;
-    color: #9fd9ff;
   }
 }
