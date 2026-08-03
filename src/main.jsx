@@ -6,6 +6,8 @@ import './styles.css';
 const STORAGE_KEY = 'tradingview-watchlist';
 const DEFAULT_WATCHLIST = ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT', 'BINANCE:SOLUSDT', 'NASDAQ:NVDA', 'NASDAQ:AAPL'];
 const FINNHUB_QUOTE_URL = 'https://finnhub.io/api/v1/quote';
+const QUOTE_BATCH_SIZE = 10;
+const QUOTE_REFRESH_MS = 30000;
 
 
 
@@ -113,6 +115,8 @@ function App() {
   const [quoteError, setQuoteError] = useState('');
   const [quotes, setQuotes] = useState({});
   const [showChart, setShowChart] = useState(true);
+  const quoteBatchIndexRef = useRef(0);
+  const quoteRequestInFlightRef = useRef(false);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(watchlist));
@@ -126,8 +130,11 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
+    quoteBatchIndexRef.current = 0;
 
     async function fetchQuotes() {
+      if (quoteRequestInFlightRef.current) return;
+
       if (!finnhubtoken) {
         setQuotes({});
         setQuoteError('Set VITE_FINNHUB_API_KEY to load Finnhub quotes.');
@@ -142,9 +149,22 @@ function App() {
         return;
       }
 
+      const quoteBatches = [];
+      for (let index = 0; index < quoteSymbols.length; index += QUOTE_BATCH_SIZE) {
+        quoteBatches.push(quoteSymbols.slice(index, index + QUOTE_BATCH_SIZE));
+      }
+
+      if (quoteBatchIndexRef.current >= quoteBatches.length) {
+        quoteBatchIndexRef.current = 0;
+      }
+
+      const batchSymbols = quoteBatches[quoteBatchIndexRef.current];
+      quoteBatchIndexRef.current = (quoteBatchIndexRef.current + 1) % quoteBatches.length;
+
       try {
+        quoteRequestInFlightRef.current = true;
         const quoteResponses = await Promise.all(
-          quoteSymbols.map(async (symbol) => {
+          batchSymbols.map(async (symbol) => {
             const response = await fetch(
               `${FINNHUB_QUOTE_URL}?symbol=${encodeURIComponent(symbol)}&token=${finnhubtoken}`,
               {
@@ -177,18 +197,29 @@ function App() {
           };
         });
 
-        setQuotes(nextQuotes);
+        setQuotes((currentQuotes) => {
+          const validSymbols = new Set(quoteSymbols);
+          const mergedQuotes = Object.fromEntries(
+            Object.entries(currentQuotes).filter(([symbol]) => validSymbols.has(symbol))
+          );
+
+          return {
+            ...mergedQuotes,
+            ...nextQuotes
+          };
+        });
         setQuoteError('');
       } catch (fetchError) {
         if (fetchError.name !== 'AbortError') {
-          setQuotes({});
           setQuoteError('Unable to load Finnhub quotes.');
         }
+      } finally {
+        quoteRequestInFlightRef.current = false;
       }
     }
 
     fetchQuotes();
-    const intervalId = window.setInterval(fetchQuotes, 30000);
+    const intervalId = window.setInterval(fetchQuotes, QUOTE_REFRESH_MS);
 
     return () => {
       controller.abort();
