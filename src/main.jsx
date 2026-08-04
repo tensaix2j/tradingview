@@ -7,6 +7,7 @@ const STORAGE_KEY = 'tradingview-watchlist';
 const DEFAULT_WATCHLIST = ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT', 'BINANCE:SOLUSDT', 'NASDAQ:NVDA', 'NASDAQ:AAPL'];
 const FINNHUB_QUOTE_URL = 'https://finnhub.io/api/v1/quote';
 const QUOTE_BATCH_SIZE = 10;
+const QUOTE_STARTUP_NEXT_BATCH_MS = 5000;
 const QUOTE_REFRESH_MS = 30000;
 
 
@@ -218,12 +219,20 @@ function App() {
       }
     }
 
+    let intervalId;
+
     fetchQuotes();
-    const intervalId = window.setInterval(fetchQuotes, QUOTE_REFRESH_MS);
+    const startupTimeoutId = window.setTimeout(() => {
+      fetchQuotes();
+      intervalId = window.setInterval(fetchQuotes, QUOTE_REFRESH_MS);
+    }, QUOTE_STARTUP_NEXT_BATCH_MS);
 
     return () => {
       controller.abort();
-      window.clearInterval(intervalId);
+      window.clearTimeout(startupTimeoutId);
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
     };
   }, [watchlist]);
 
