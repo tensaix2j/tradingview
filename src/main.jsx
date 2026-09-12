@@ -4,49 +4,67 @@ import { Eye, EyeOff, Plus, Search, Trash2 } from 'lucide-react';
 import './styles.css';
 
 const STORAGE_KEY = 'tradingview-watchlist';
-const DEFAULT_WATCHLIST = ['BINANCE:BTCUSDT', 'BINANCE:ETHUSDT', 'BINANCE:SOLUSDT', 'NASDAQ:NVDA', 'NASDAQ:AAPL'];
-const FINNHUB_QUOTE_URL = 'https://finnhub.io/api/v1/quote';
-const QUOTE_BATCH_SIZE = 10;
-const QUOTE_STARTUP_NEXT_BATCH_MS = 5000;
+const DEFAULT_WATCHLIST = ['BTCUSDT:BTCUSDT', 'ETHUSDT:ETHUSDT', 'SOLUSDT:SOLUSDT', 'NVDA:NVDA', 'AAPL:AAPL'];
+const QUOTE_URL = 'https://molecule-dev.muaverse.build/polyrouter/get_fapi_quotes';
 const QUOTE_REFRESH_MS = 30000;
-
-
-
-let ss = [
-    "paHIwMXF",
-    "rOGJman",
-    "JjamdkOTA5",
-    "ZDkwOWZ",
-    "ZmlocjAxcWs",
-    "4YmZqcm",
-    "NrMAo=",
-]
-let arr = [];
-let seq = ( 3e6 + 1e4 + 2e3 + (1<<8) + 200 ) + "";
-for ( let i = 0 ; i < seq.length ; i++ ) {
-    arr.push( ss[ seq[i] ] )
-}
-const finnhubtoken = atob( arr.join("") );
-
-
 function normalizeSymbol(value) {
   return value.trim().replace(/\s+/g, '').toUpperCase();
 }
 
 function toRawSymbol(symbol) {
-  const rawSymbol = symbol.includes(':') ? symbol.split(':').at(-1) : symbol;
-  return rawSymbol.replace('/', '').replace('-', '').toUpperCase();
+  return symbol.replace('/', '').replace('-', '').toUpperCase();
 }
 
-function toFinnhubSymbol(symbol) {
-  const normalizedSymbol = normalizeSymbol(symbol);
+function parseSymbolEntry(value) {
+  const normalized = normalizeSymbol(value);
+  const separatorIndex = normalized.indexOf(':');
 
-  if (normalizedSymbol.startsWith('BINANCE:')) return normalizedSymbol;
-  if (/^[A-Z0-9]+(USDT|USDC|BTC|ETH|BNB)$/.test(normalizedSymbol)) {
-    return `BINANCE:${normalizedSymbol}`;
+  if (separatorIndex === -1) {
+    const symbol = toRawSymbol(normalized);
+    return { muaverseSymbol: symbol, tradingViewSymbol: symbol };
   }
 
-  return toRawSymbol(normalizedSymbol);
+  const muaverseSymbol = toRawSymbol(normalized.slice(0, separatorIndex));
+  const tradingViewSymbol = toRawSymbol(normalized.slice(separatorIndex + 1));
+  return { muaverseSymbol, tradingViewSymbol };
+}
+
+function normalizeSymbolEntry(value) {
+  const { muaverseSymbol, tradingViewSymbol } = parseSymbolEntry(value);
+  return `${muaverseSymbol}:${tradingViewSymbol || muaverseSymbol}`;
+}
+
+function toServerSymbol(symbol) {
+  return parseSymbolEntry(symbol).muaverseSymbol;
+}
+
+function toTradingViewSymbol(symbol) {
+  return parseSymbolEntry(symbol).tradingViewSymbol;
+}
+
+function normalizeQuoteResponse(payload) {
+  const values = Array.isArray(payload)
+    ? payload
+    : Array.isArray(payload?.data)
+      ? payload.data
+      : Object.entries(payload?.data ?? payload ?? {}).map(([symbol, quote]) => ({
+          symbol,
+          ...(quote && typeof quote === 'object' ? quote : { price: quote })
+        }));
+
+  return values.reduce((result, quote) => {
+    if (!quote || typeof quote !== 'object') return result;
+
+    const symbol = toServerSymbol(quote.symbol ?? quote.s ?? quote.ticker ?? '');
+    const price = quote.price ?? quote.lastPrice ?? quote.last ?? quote.c ?? quote.markPrice;
+    const changePercent = quote.changePercent ?? quote.percentChange ?? quote.dp ?? quote.P;
+    const previousClose = quote.previousClose ?? quote.prevClosePrice ?? quote.pc;
+
+    if (symbol && price != null) {
+      result[symbol] = { price, changePercent, previousClose, source: 'Binance' };
+    }
+    return result;
+  }, {});
 }
 
 function formatPrice(value) {
@@ -67,7 +85,9 @@ function formatPercent(value) {
 function loadWatchlist() {
   try {
     const stored = JSON.parse(localStorage.getItem(STORAGE_KEY));
-    return Array.isArray(stored) && stored.length ? stored : DEFAULT_WATCHLIST;
+    return Array.isArray(stored) && stored.length
+      ? stored.map(normalizeSymbolEntry)
+      : DEFAULT_WATCHLIST;
   } catch {
     return DEFAULT_WATCHLIST;
   }
@@ -110,13 +130,12 @@ function TradingViewChart({ symbol }) {
 
 function App() {
   const [watchlist, setWatchlist] = useState(loadWatchlist);
-  const [activeSymbol, setActiveSymbol] = useState(watchlist[0] ?? 'NASDAQ:AAPL');
+  const [activeSymbol, setActiveSymbol] = useState(watchlist[0] ?? 'AAPL:AAPL');
   const [newSymbol, setNewSymbol] = useState('');
   const [error, setError] = useState('');
   const [quoteError, setQuoteError] = useState('');
   const [quotes, setQuotes] = useState({});
   const [showChart, setShowChart] = useState(true);
-  const quoteBatchIndexRef = useRef(0);
   const quoteRequestInFlightRef = useRef(false);
 
   useEffect(() => {
@@ -131,18 +150,11 @@ function App() {
 
   useEffect(() => {
     const controller = new AbortController();
-    quoteBatchIndexRef.current = 0;
 
     async function fetchQuotes() {
       if (quoteRequestInFlightRef.current) return;
 
-      if (!finnhubtoken) {
-        setQuotes({});
-        setQuoteError('Set VITE_FINNHUB_API_KEY to load Finnhub quotes.');
-        return;
-      }
-
-      const quoteSymbols = [...new Set(watchlist.map(toFinnhubSymbol))];
+      const quoteSymbols = [...new Set(watchlist.map(toServerSymbol))];
 
       if (!quoteSymbols.length) {
         setQuotes({});
@@ -150,53 +162,16 @@ function App() {
         return;
       }
 
-      const quoteBatches = [];
-      for (let index = 0; index < quoteSymbols.length; index += QUOTE_BATCH_SIZE) {
-        quoteBatches.push(quoteSymbols.slice(index, index + QUOTE_BATCH_SIZE));
-      }
-
-      if (quoteBatchIndexRef.current >= quoteBatches.length) {
-        quoteBatchIndexRef.current = 0;
-      }
-
-      const batchSymbols = quoteBatches[quoteBatchIndexRef.current];
-      quoteBatchIndexRef.current = (quoteBatchIndexRef.current + 1) % quoteBatches.length;
-
       try {
         quoteRequestInFlightRef.current = true;
-        const quoteResponses = await Promise.all(
-          batchSymbols.map(async (symbol) => {
-            const response = await fetch(
-              `${FINNHUB_QUOTE_URL}?symbol=${encodeURIComponent(symbol)}&token=${finnhubtoken}`,
-              {
-                signal: controller.signal
-              }
-            );
-
-            if (!response.ok) return null;
-
-            const quote = await response.json();
-            if (!quote || Number(quote.c) === 0) return null;
-
-            return {
-              symbol,
-              price: quote.c,
-              changePercent: quote.dp,
-              previousClose: quote.pc
-            };
-          })
+        const response = await fetch(
+          `${QUOTE_URL}?symbols=${encodeURIComponent(quoteSymbols.join(','))}`,
+          { signal: controller.signal }
         );
 
-        const nextQuotes = {};
+        if (!response.ok) throw new Error(`Quote request failed: ${response.status}`);
 
-        quoteResponses.filter(Boolean).forEach((quote) => {
-          nextQuotes[quote.symbol] = {
-            price: quote.price,
-            changePercent: quote.changePercent,
-            previousClose: quote.previousClose,
-            source: 'Finnhub'
-          };
-        });
+        const nextQuotes = normalizeQuoteResponse(await response.json());
 
         setQuotes((currentQuotes) => {
           const validSymbols = new Set(quoteSymbols);
@@ -212,27 +187,19 @@ function App() {
         setQuoteError('');
       } catch (fetchError) {
         if (fetchError.name !== 'AbortError') {
-          setQuoteError('Unable to load Finnhub quotes.');
+          setQuoteError('Unable to load Muaverse quotes.');
         }
       } finally {
         quoteRequestInFlightRef.current = false;
       }
     }
 
-    let intervalId;
-
     fetchQuotes();
-    const startupTimeoutId = window.setTimeout(() => {
-      fetchQuotes();
-      intervalId = window.setInterval(fetchQuotes, QUOTE_REFRESH_MS);
-    }, QUOTE_STARTUP_NEXT_BATCH_MS);
+    const intervalId = window.setInterval(fetchQuotes, QUOTE_REFRESH_MS);
 
     return () => {
       controller.abort();
-      window.clearTimeout(startupTimeoutId);
-      if (intervalId) {
-        window.clearInterval(intervalId);
-      }
+      window.clearInterval(intervalId);
     };
   }, [watchlist]);
 
@@ -240,12 +207,12 @@ function App() {
 
   function addSymbol(event) {
     event.preventDefault();
-    const symbol = normalizeSymbol(newSymbol);
-
-    if (!symbol) {
-      setError('Enter a ticker or exchange-prefixed symbol.');
+    if (!normalizeSymbol(newSymbol)) {
+      setError('Enter a Muaverse symbol, optionally followed by :TradingViewSymbol.');
       return;
     }
+
+    const symbol = normalizeSymbolEntry(newSymbol);
 
     if (watchlist.includes(symbol)) {
       setActiveSymbol(symbol);
@@ -284,7 +251,7 @@ function App() {
           </button>
         </header>
         <div className="chart-frame">
-          <TradingViewChart symbol={activeSymbol} />
+          <TradingViewChart symbol={toTradingViewSymbol(activeSymbol)} />
         </div>
       </section>
       ) : null}
@@ -316,7 +283,7 @@ function App() {
               id="symbol"
               value={newSymbol}
               onChange={(event) => setNewSymbol(event.target.value)}
-              placeholder="NASDAQ:GOOGL"
+              placeholder="BINANCE_SYMBOL:TRADINGVIEW_SYMBOL"
               autoComplete="off"
             />
           </label>
@@ -329,7 +296,7 @@ function App() {
 
         <div className="watchlist">
           {sortedWatchlist.map((symbol) => {
-            const quoteKey = toFinnhubSymbol(symbol);
+            const quoteKey = toServerSymbol(symbol);
             const quote = quotes[quoteKey];
             const isPositive = Number(quote?.changePercent) >= 0;
 
@@ -343,7 +310,7 @@ function App() {
                 <span className="symbol-cell">
                   <strong>{symbol}</strong>
                   <span className="price-line">
-                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No Finnhub quote'}
+                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No Muaverse quote'}
                   </span>
                 </span>
                 <span
