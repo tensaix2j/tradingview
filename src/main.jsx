@@ -4,7 +4,7 @@ import { Eye, EyeOff, Plus, Search, Trash2 } from 'lucide-react';
 import './styles.css';
 
 const STORAGE_KEY = 'tradingview-watchlist';
-const DEFAULT_WATCHLIST = ['BTCUSDT:BTCUSDT', 'ETHUSDT:ETHUSDT', 'SOLUSDT:SOLUSDT', 'NVDA:NVDA', 'AAPL:AAPL'];
+const DEFAULT_WATCHLIST = ['BTCUSDT:BTCUSDT', 'ETHUSDT:ETHUSDT', 'SOLUSDT:SOLUSDT', 'NVDAUSDT:NVDA', 'AAPLUSDT:AAPL'];
 const QUOTE_URL = 'https://molecule-dev.muaverse.build/polyrouter/get_fapi_quotes';
 const QUOTE_REFRESH_MS = 30000;
 function normalizeSymbol(value) {
@@ -187,7 +187,7 @@ function App() {
         setQuoteError('');
       } catch (fetchError) {
         if (fetchError.name !== 'AbortError') {
-          setQuoteError('Unable to load Muaverse quotes.');
+          setQuoteError('Unable to load quotes.');
         }
       } finally {
         quoteRequestInFlightRef.current = false;
@@ -208,7 +208,7 @@ function App() {
   function addSymbol(event) {
     event.preventDefault();
     if (!normalizeSymbol(newSymbol)) {
-      setError('Enter a Muaverse symbol, optionally followed by :TradingViewSymbol.');
+      setError('Enter a binance symbol, optionally followed by :TradingViewSymbol.');
       return;
     }
 
@@ -310,7 +310,7 @@ function App() {
                 <span className="symbol-cell">
                   <strong>{symbol}</strong>
                   <span className="price-line">
-                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No Muaverse quote'}
+                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No quote'}
                   </span>
                 </span>
                 <span

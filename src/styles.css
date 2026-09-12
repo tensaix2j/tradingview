@@ -143,7 +143,7 @@ h2 {
   flex-direction: column;
   min-width: 0;
   min-height: 0;
-  padding: 18px;
+  padding: 14px;
   background: #111722;
   overflow: hidden;
 }
@@ -164,7 +164,7 @@ h2 {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 42px;
   gap: 10px;
-  margin-top: 20px;
+  margin-top: 12px;
 }
 
 .input-wrap {
@@ -225,9 +225,9 @@ h2 {
   display: flex;
   flex-direction: column;
   flex: 1;
-  gap: 8px;
+  gap: 4px;
   min-height: 0;
-  margin-top: 18px;
+  margin-top: 12px;
   overflow-y: auto;
   padding-right: 2px;
 }
@@ -238,13 +238,13 @@ h2 {
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  min-height: 46px;
+  min-height: 38px;
   border: 1px solid #263247;
   border-radius: 8px;
   color: #d9e3f2;
   background: #151d2a;
   cursor: pointer;
-  padding: 0 12px 0 14px;
+  padding: 0 9px 0 10px;
   text-align: left;
 }
 
@@ -262,7 +262,7 @@ h2 {
 .symbol-cell {
   display: grid;
   min-width: 0;
-  gap: 3px;
+  gap: 1px;
 }
 
 .symbol-cell strong,
@@ -274,20 +274,20 @@ h2 {
 }
 
 .symbol-cell strong {
-  font-size: 0.92rem;
+  font-size: 0.86rem;
 }
 
 .price-line {
   color: #8ea0b8;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 600;
 }
 
 .change-cell {
   flex: 0 0 auto;
-  min-width: 68px;
+  min-width: 58px;
   color: #8ea0b8;
-  font-size: 0.82rem;
+  font-size: 0.76rem;
   font-weight: 800;
   text-align: right;
 }
@@ -333,6 +333,23 @@ h2 {
 
   .watchlist-pane {
     min-height: 0;
+  }
+}
+
+/* Keep the chart and watchlist side by side on phone-sized landscape viewports. */
+@media (orientation: landscape) and (min-width: 600px) and (max-height: 600px) {
+  .app-shell {
+    grid-template-columns: minmax(0, 1fr) 300px;
+    grid-template-rows: 1fr;
+  }
+
+  .app-shell.is-chart-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .chart-pane {
+    border-right: 1px solid #202938;
+    border-bottom: 0;
   }
 }
 
