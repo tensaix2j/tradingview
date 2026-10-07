@@ -1,7 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Eye, EyeOff, Plus, Search, Trash2 } from 'lucide-react';
+import {
+  Download,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Plus,
+  Search,
+  Trash2,
+  Upload
+} from 'lucide-react';
 import './styles.css';
+import { setVisitor } from './visitorTracking';
+
+setVisitor();
 
 const STORAGE_KEY = 'tradingview-watchlist';
 const DEFAULT_WATCHLIST = ['BTCUSDT:BTCUSDT', 'ETHUSDT:ETHUSDT', 'SOLUSDT:SOLUSDT', 'NVDAUSDT:NVDA', 'AAPLUSDT:AAPL'];
@@ -40,6 +52,11 @@ function toServerSymbol(symbol) {
 
 function toTradingViewSymbol(symbol) {
   return parseSymbolEntry(symbol).tradingViewSymbol;
+}
+
+function toMarketSearchSymbol(symbol) {
+  const muaverseSymbol = parseSymbolEntry(symbol).muaverseSymbol;
+  return muaverseSymbol.replace(/(USDT|USDC|BUSD|USD|BTC|ETH|BNB)$/, '').toLowerCase();
 }
 
 function normalizeQuoteResponse(payload) {
@@ -93,6 +110,17 @@ function loadWatchlist() {
   }
 }
 
+function shouldShowChartInitially() {
+  if (typeof window === 'undefined') return true;
+
+  const isSmallViewport = window.matchMedia('(max-width: 860px)').matches;
+  const isPhoneLandscape = window.matchMedia(
+    '(max-height: 600px) and (pointer: coarse)'
+  ).matches;
+
+  return !(isSmallViewport || isPhoneLandscape);
+}
+
 function TradingViewChart({ symbol }) {
   const containerRef = useRef(null);
 
@@ -111,7 +139,7 @@ function TradingViewChart({ symbol }) {
     script.innerHTML = JSON.stringify({
       autosize: true,
       symbol,
-      interval: 'D',
+      interval: '60',
       timezone: 'Asia/Singapore',
       theme: 'dark',
       style: '1',
@@ -135,8 +163,9 @@ function App() {
   const [error, setError] = useState('');
   const [quoteError, setQuoteError] = useState('');
   const [quotes, setQuotes] = useState({});
-  const [showChart, setShowChart] = useState(true);
+  const [showChart, setShowChart] = useState(shouldShowChartInitially);
   const quoteRequestInFlightRef = useRef(false);
+  const importInputRef = useRef(null);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(watchlist));
@@ -231,6 +260,45 @@ function App() {
     setWatchlist((current) => current.filter((item) => item !== symbol));
   }
 
+  function exportWatchlist() {
+    const file = new Blob([JSON.stringify(watchlist, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'tradingview-watchlist.json';
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function importWatchlist(event) {
+    const [file] = event.target.files;
+    event.target.value = '';
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const imported = JSON.parse(reader.result);
+        if (!Array.isArray(imported)) throw new Error('Watchlist must be an array.');
+
+        const symbols = [...new Set(
+          imported
+            .filter((symbol) => typeof symbol === 'string' && normalizeSymbol(symbol))
+            .map(normalizeSymbolEntry)
+        )];
+
+        if (!symbols.length) throw new Error('Watchlist contains no valid symbols.');
+
+        setWatchlist(symbols);
+        setActiveSymbol(symbols[0]);
+        setError('');
+      } catch {
+        setError('Unable to import watchlist. Use a JSON array of symbols.');
+      }
+    };
+    reader.readAsText(file);
+  }
+
   return (
     <main className={`app-shell ${showChart ? '' : 'is-chart-hidden'}`}>
       {showChart ? (
@@ -263,6 +331,31 @@ function App() {
             <h2>Watchlist</h2>
           </div>
           <div className="watchlist-actions">
+            <input
+              ref={importInputRef}
+              className="visually-hidden"
+              type="file"
+              accept="application/json,.json"
+              onChange={importWatchlist}
+            />
+            <button
+              className="icon-ghost-button"
+              type="button"
+              onClick={() => importInputRef.current?.click()}
+              aria-label="Import watchlist"
+              title="Import watchlist"
+            >
+              <Upload size={17} />
+            </button>
+            <button
+              className="icon-ghost-button"
+              type="button"
+              onClick={exportWatchlist}
+              aria-label="Export watchlist"
+              title="Export watchlist"
+            >
+              <Download size={17} />
+            </button>
             <button
               className="icon-ghost-button"
               type="button"
@@ -301,16 +394,23 @@ function App() {
             const isPositive = Number(quote?.changePercent) >= 0;
 
             return (
-              <button
+              <div
                 className={`watchlist-row ${symbol === activeSymbol ? 'is-active' : ''}`}
                 key={symbol}
-                type="button"
+                role="button"
+                tabIndex={0}
                 onClick={() => setActiveSymbol(symbol)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault();
+                    setActiveSymbol(symbol);
+                  }
+                }}
               >
                 <span className="symbol-cell">
                   <strong>{symbol}</strong>
                   <span className="price-line">
-                    {quote ? `${formatPrice(quote.price)} ${quote.source}` : 'No quote'}
+                    {quote ? formatPrice(quote.price) : 'No quote'}
                   </span>
                 </span>
                 <span
@@ -320,6 +420,17 @@ function App() {
                 >
                   {quote ? formatPercent(quote.changePercent) : '-'}
                 </span>
+                <a
+                  className="coin-gecko-icon"
+                  href={`https://coinpaprika.com/search/?q=${encodeURIComponent(toMarketSearchSymbol(symbol))}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`Search ${symbol} on CoinPaprika`}
+                  title="Search on CoinPaprika"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <ExternalLink size={15} />
+                </a>
                 <Trash2
                   aria-label={`Remove ${symbol}`}
                   className="remove-icon"
@@ -338,7 +449,7 @@ function App() {
                     }
                   }}
                 />
-              </button>
+              </div>
             );
           })}
         </div>
