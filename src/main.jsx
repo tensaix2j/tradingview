@@ -54,9 +54,8 @@ function toTradingViewSymbol(symbol) {
   return parseSymbolEntry(symbol).tradingViewSymbol;
 }
 
-function toMarketSearchSymbol(symbol) {
-  const muaverseSymbol = parseSymbolEntry(symbol).muaverseSymbol;
-  return muaverseSymbol.replace(/(USDT|USDC|BUSD|USD|BTC|ETH|BNB)$/, '').toLowerCase();
+function toTradingViewExternalSymbol(symbol) {
+  return parseSymbolEntry(symbol).tradingViewSymbol;
 }
 
 function normalizeQuoteResponse(payload) {
@@ -422,11 +421,11 @@ function App() {
                 </span>
                 <a
                   className="coin-gecko-icon"
-                  href={`https://coinpaprika.com/search/?q=${encodeURIComponent(toMarketSearchSymbol(symbol))}`}
+                  href={`https://www.tradingview.com/e?symbol=${encodeURIComponent(toTradingViewExternalSymbol(symbol))}`}
                   target="_blank"
                   rel="noreferrer"
-                  aria-label={`Search ${symbol} on CoinPaprika`}
-                  title="Search on CoinPaprika"
+                  aria-label={`Open ${symbol} on TradingView`}
+                  title="Open on TradingView"
                   onClick={(event) => event.stopPropagation()}
                 >
                   <ExternalLink size={15} />
